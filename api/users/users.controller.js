@@ -1,57 +1,90 @@
-const checkUser = require('./src/check-user');
-const findIndex = require('./src/find-index');
-const loadUsers = require('./src/load');
-const saveUsers = require('./src/save');
-const pathUsers = '/../data/usuarios.json';
-
-const users = loadUsers(pathUsers);
+const usersModel = require('./users.model');
+const tweetFunction = require('../tweets/tweets.controller');
 
 module.exports = { getAll, getById, createUser, deleteUser , editUser };
 
 function getAll (req, res) {
-    return res.json(users);
+    usersModel.find()
+        .then (response => {
+            
+            response.forEach(user => {
+                tweetFunction.getTweetsFromUser(user.username )
+                .then(tweet => {
+                    user.tweets = tweet;
+                })
+            });
+            
+            res.json(response);
+        });
 }
-
+//
 function getById (req, res) {
-    const username = req.params.username;
-    let result = users.find(usuarioActual => usuarioActual.username === username);
-    res.json(result);
+    usersModel.findOne({ "username": req.params.id }) 
+        .then( response => {
+            tweetFunction.getTweetsFromUser(req.params.id)
+                .then ( tweet => {
+                    response.tweets = tweet;
+                    res.json(response);
+                })
+        }) 
+        .catch ( err  => {
+            res.json(err);
+        })
 }
 
 function createUser (req, res) {
     const { name, email, username } = req.body;
-    const user = { name, email, username, tweets: [] };
-    const errors = checkUser(user, users);
-    if (errors.length === 0) {
-        users.push(user);
+    const user = new usersModel ({ 
+        name, email, username, tweets: [] 
+    });
+    const error = user.validateSync();
+    if (!error) {
+        user.save();
         res.json(user);
     } else {
-        res.status(400).json(errors);
+        res.status(400).json(error.errors);
     }
 }
 
 function deleteUser (req, res) {
     const username = req.params.id;
-    const userIdx = findIndex(users, username);
-    if (userIdx !== -1) {
-        const temp = users.splice(userIdx, 1);
-        saveUsers(pathUsers, users);
-        res.json(temp);
-    } else {
-        res.status(404).send('Fallo en borrar: usuario no registrado');
-    }
+    usersModel.findOne( { "username": req.params.id} )
+        .remove()
+        .then ( response => {
+            tweetFunction.deleteTweetsFromUsername ( username );
+            res.json(response);
+        })
+        .catch (err => {
+            res.status(404).json(err);
+        })
+    
 }
 
 function editUser (req, res) {
-    const username = request.params.username;
-    const indice = findIndex(users, username);
+    usersModel.findOne({ "username": req.params.id })
+        .then(response => {
+        if (req.body && req.body.email) {
+            response.email = req.body.email;
+        }
 
-    if (request.body && request.body.email)
-        users[indice].email = request.body.email;
-
-    if (request.body && request.body.name)
-        users[indice].name = request.body.name;
-
-    save(pathUsers, users);
-    return users[indice];
+        if (req.body && req.body.name) {
+            response.name = req.body.name;
+        }
+        response.save();
+        res.json(response);
+        })
+        .catch(err => {
+            res.status(404).json(err);
+        })
 } 
+
+/*
+TypeError: isValidUsername is not a function
+- No se como pasar el parámetro username desde tweets.controller
+
+function isValidUsername ( username ) {
+    usersModel.findOne( { "username": username })
+        .then(response => {return true} )
+        .catch(err => {return false} )
+}
+*/
